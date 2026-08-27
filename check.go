@@ -19,6 +19,14 @@ type Options struct {
 	InsecureSkipVerify bool
 	// ALPN is the protocol list offered via ALPN. Defaults to h2, http/1.1.
 	ALPN []string
+	// EnumerateGroups probes every group in allGroups individually (--groups) and
+	// records which the server accepts.
+	EnumerateGroups bool
+	// Follow resolves HTTP redirects and probes the final host (--follow).
+	Follow bool
+	// DialOverride maps "host:port" to a dial address, so a probe connects to a
+	// chosen IP while keeping the real hostname for SNI (--resolve).
+	DialOverride map[string]string
 }
 
 func (o Options) withDefaults() Options {
@@ -43,8 +51,13 @@ func Probe(ctx context.Context, target string, opts Options) Result {
 		r.Err = err.Error()
 		return finish(r, start)
 	}
+
+	if opts.Follow {
+		host, port = applyFollow(ctx, host, port, opts, &r)
+	}
+
 	r.Host, r.Port = host, port
-	r.ResolvedIP = resolveIP(ctx, host)
+	r.ResolvedIP = resolveIP(ctx, host, port, opts.DialOverride)
 
 	state, err := handshake(ctx, host, port, opts, nil)
 	if err != nil {
@@ -71,7 +84,43 @@ func Probe(ctx context.Context, target string, opts Options) Result {
 		r.ForcedPQError = friendlyError(err, opts.Timeout)
 	}
 
+	if opts.EnumerateGroups {
+		r.SupportedGroups = enumerateGroups(ctx, host, port, opts)
+	}
+
 	return finish(r, start)
+}
+
+// applyFollow resolves HTTP redirects for host:port and returns the endpoint to
+// probe. It is best-effort: on any failure it returns the original host:port and
+// records a note on r, so the caller always gets a TLS verdict.
+func applyFollow(ctx context.Context, host, port string, opts Options, r *Result) (string, string) {
+	finalHost, finalPort, chain, err := resolveFinalTarget(ctx, host, port, opts)
+	if err != nil {
+		r.FollowNote = "redirect-following failed: " + friendlyError(err, opts.Timeout)
+		return host, port
+	}
+	if finalHost != host || finalPort != port {
+		r.FinalTarget = net.JoinHostPort(finalHost, finalPort)
+		r.Redirects = chain
+	}
+	return finalHost, finalPort
+}
+
+// enumerateGroups probes each group in allGroups with its own single-group TLS
+// 1.3 handshake and returns those the server accepted, in allGroups order. A
+// handshake that fails to negotiate means the group is unsupported; probes force
+// TLS 1.3, so a group offered only under TLS 1.2 reads as unsupported, which is
+// acceptable because post-quantum key exchange requires TLS 1.3.
+func enumerateGroups(ctx context.Context, host, port string, opts Options) []tls.CurveID {
+	var supported []tls.CurveID
+	for _, g := range allGroups {
+		state, err := handshake(ctx, host, port, opts, []tls.CurveID{g})
+		if err == nil && state.CurveID == g {
+			supported = append(supported, g)
+		}
+	}
+	return supported
 }
 
 func finish(r Result, start time.Time) Result {
@@ -103,7 +152,7 @@ func handshake(ctx context.Context, host, port string, opts Options, groups []tl
 		NetDialer: &net.Dialer{Timeout: opts.Timeout},
 		Config:    cfg,
 	}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
+	conn, err := dialer.DialContext(ctx, "tcp", dialAddr(host, port, opts.DialOverride))
 	if err != nil {
 		return tls.ConnectionState{}, err
 	}
@@ -114,6 +163,17 @@ func handshake(ctx context.Context, host, port string, opts Options, groups []tl
 		return tls.ConnectionState{}, errors.New("connection is not TLS")
 	}
 	return tlsConn.ConnectionState(), nil
+}
+
+// dialAddr returns the socket address to connect to for host:port. A --resolve
+// override for that exact host:port redirects the connection to a chosen address
+// while the caller keeps host as the TLS ServerName. Without an override it is
+// just net.JoinHostPort(host, port).
+func dialAddr(host, port string, override map[string]string) string {
+	if addr, ok := override[net.JoinHostPort(host, port)]; ok {
+		return addr
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func recordCert(r *Result, chain []*x509.Certificate) {
@@ -128,7 +188,16 @@ func recordCert(r *Result, chain []*x509.Certificate) {
 	}
 }
 
-func resolveIP(ctx context.Context, host string) string {
+// resolveIP reports the address the probe connects to, for display. A --resolve
+// override wins; then a host that is already a literal IP; otherwise it does a
+// short DNS lookup. It returns "" when the name cannot be resolved.
+func resolveIP(ctx context.Context, host, port string, override map[string]string) string {
+	if addr, ok := override[net.JoinHostPort(host, port)]; ok {
+		if h, _, err := net.SplitHostPort(addr); err == nil {
+			return h
+		}
+		return addr
+	}
 	if net.ParseIP(host) != nil {
 		return host
 	}

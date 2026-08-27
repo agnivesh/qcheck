@@ -70,6 +70,46 @@ func TestRenderJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRenderTextGroupsAndFollow(t *testing.T) {
+	r := sampleReady()
+	r.SupportedGroups = []tls.CurveID{tls.X25519, tls.X25519MLKEM768, tls.CurveP256}
+	r.FinalTarget = "www.example.com:443"
+	r.Redirects = []string{"https://www.example.com/"}
+	r = finish(r, time.Now())
+
+	var buf bytes.Buffer
+	RenderText(&buf, []Result{r}, false)
+	got := buf.String()
+	for _, want := range []string{"Groups", "CurveP256", "Followed", "www.example.com:443"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("text output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderJSONGroupsAndFollow(t *testing.T) {
+	r := sampleReady()
+	r.SupportedGroups = []tls.CurveID{tls.X25519, tls.X25519MLKEM768}
+	r.FinalTarget = "www.example.com:443"
+	r.Redirects = []string{"https://www.example.com/"}
+
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, []Result{finish(r, time.Now())}); err != nil {
+		t.Fatal(err)
+	}
+	var rep jsonReport
+	if err := json.Unmarshal(buf.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	got := rep.Results[0]
+	if len(got.SupportedGroups) != 2 || got.SupportedGroups[1] != "X25519MLKEM768" {
+		t.Errorf("supported_groups = %v", got.SupportedGroups)
+	}
+	if got.FinalTarget != "www.example.com:443" || len(got.Redirects) != 1 {
+		t.Errorf("follow fields wrong: final=%q redirects=%v", got.FinalTarget, got.Redirects)
+	}
+}
+
 func TestRenderTextError(t *testing.T) {
 	r := finish(Result{Target: "nope.invalid", Err: "DNS lookup failed: no such host"}, time.Now())
 	var buf bytes.Buffer

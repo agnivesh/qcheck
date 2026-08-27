@@ -33,6 +33,12 @@ func RenderText(w io.Writer, results []Result, color bool) {
 
 func writeResultText(w io.Writer, r Result, color bool) {
 	fmt.Fprintf(w, "%s  →  %s\n", r.Target, colorize(r.Verdict.label(), r.Verdict, color))
+	if r.FinalTarget != "" {
+		fmt.Fprintf(w, "  Followed      %s → %s\n", r.Target, r.FinalTarget)
+	}
+	if r.FollowNote != "" {
+		fmt.Fprintf(w, "  %s\n", r.FollowNote)
+	}
 	if r.Err != "" {
 		fmt.Fprintf(w, "  %s\n", r.Err)
 		return
@@ -58,6 +64,14 @@ func writeResultText(w io.Writer, r Result, color bool) {
 		fmt.Fprintf(w, "  Forced PQ     rejected (%s)\n", r.ForcedPQError)
 	default:
 		fmt.Fprintln(w, "  Forced PQ     rejected")
+	}
+
+	if len(r.SupportedGroups) > 0 {
+		names := make([]string, len(r.SupportedGroups))
+		for i, g := range r.SupportedGroups {
+			names[i] = groupName(g)
+		}
+		fmt.Fprintf(w, "  Groups        %s\n", strings.Join(names, "\n                "))
 	}
 
 	if r.LeafSigAlg != "" {
@@ -152,6 +166,10 @@ type jsonResult struct {
 	ForcedPQGroup            string   `json:"forced_pq_group,omitempty"`
 	ForcedPQSupported        bool     `json:"forced_pq_supported"`
 	ForcedPQError            string   `json:"forced_pq_error,omitempty"`
+	SupportedGroups          []string `json:"supported_groups,omitempty"`
+	FinalTarget              string   `json:"final_target,omitempty"`
+	Redirects                []string `json:"redirects,omitempty"`
+	FollowNote               string   `json:"follow_note,omitempty"`
 	ALPN                     string   `json:"alpn,omitempty"`
 	LeafSignatureAlgorithm   string   `json:"leaf_signature_algorithm,omitempty"`
 	ChainSignatureAlgorithms []string `json:"chain_signature_algorithms,omitempty"`
@@ -186,6 +204,9 @@ func (r Result) toJSON() jsonResult {
 		KeyExchangePostQuantum:   r.DefaultIsPQ,
 		ForcedPQSupported:        r.ForcedPQSupported,
 		ForcedPQError:            r.ForcedPQError,
+		FinalTarget:              r.FinalTarget,
+		Redirects:                r.Redirects,
+		FollowNote:               r.FollowNote,
 		ALPN:                     r.ALPN,
 		LeafSignatureAlgorithm:   r.LeafSigAlg,
 		ChainSignatureAlgorithms: r.ChainSigAlgs,
@@ -203,6 +224,9 @@ func (r Result) toJSON() jsonResult {
 	}
 	if r.ForcedPQGroup != 0 {
 		jr.ForcedPQGroup = r.ForcedPQGroup.String()
+	}
+	for _, g := range r.SupportedGroups {
+		jr.SupportedGroups = append(jr.SupportedGroups, g.String())
 	}
 	if !r.CertNotAfter.IsZero() {
 		jr.CertNotAfter = r.CertNotAfter.UTC().Format(time.RFC3339)
