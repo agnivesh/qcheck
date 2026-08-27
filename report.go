@@ -33,11 +33,11 @@ func RenderText(w io.Writer, results []Result, color bool) {
 
 func writeResultText(w io.Writer, r Result, color bool) {
 	fmt.Fprintf(w, "%s  →  %s\n", r.Target, colorize(r.Verdict.label(), r.Verdict, color))
-	fmt.Fprintf(w, "  %s\n", r.Explanation)
 	if r.Err != "" {
-		fmt.Fprintf(w, "  error         %s\n", r.Err)
+		fmt.Fprintf(w, "  %s\n", r.Err)
 		return
 	}
+	fmt.Fprintf(w, "  %s\n", r.Explanation)
 
 	fmt.Fprintf(w, "  TLS           %s  /  %s\n", tlsVersionName(r.TLSVersion), tls.CipherSuiteName(r.CipherSuite))
 

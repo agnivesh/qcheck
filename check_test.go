@@ -45,8 +45,8 @@ func TestProbeClassicalOnly(t *testing.T) {
 	if r.ForcedPQSupported {
 		t.Fatal("did not expect the forced-PQ handshake to succeed")
 	}
-	if r.ForcedPQError == "" {
-		t.Fatal("expected a forced-PQ rejection message")
+	if r.ForcedPQError != "" {
+		t.Fatalf("an ordinary PQ rejection should not set an error, got %q", r.ForcedPQError)
 	}
 	if r.Verdict != VerdictNotReady {
 		t.Fatalf("verdict = %v (%s), want not-ready", r.Verdict, r.Explanation)
@@ -55,8 +55,11 @@ func TestProbeClassicalOnly(t *testing.T) {
 
 func TestProbeConnectionRefused(t *testing.T) {
 	r := Probe(t.Context(), "127.0.0.1:1", Options{Timeout: 2 * time.Second})
-	if r.Verdict != VerdictError || r.Err == "" {
-		t.Fatalf("expected an error verdict, got %v / %q", r.Verdict, r.Err)
+	if r.Verdict != VerdictError {
+		t.Fatalf("verdict = %v, want error", r.Verdict)
+	}
+	if r.Err != "connection refused" {
+		t.Fatalf("Err = %q, want %q", r.Err, "connection refused")
 	}
 }
 

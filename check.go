@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"net"
 	"time"
 )
@@ -49,7 +48,7 @@ func Probe(ctx context.Context, target string, opts Options) Result {
 
 	state, err := handshake(ctx, host, port, opts, nil)
 	if err != nil {
-		r.Err = fmt.Sprintf("default handshake: %v", err)
+		r.Err = friendlyError(err, opts.Timeout)
 		return finish(r, start)
 	}
 	r.TLSVersion = state.Version
@@ -61,11 +60,15 @@ func Probe(ctx context.Context, target string, opts Options) Result {
 
 	forced, err := handshake(ctx, host, port, opts, pqGroups)
 	switch {
-	case err != nil:
-		r.ForcedPQError = err.Error()
-	case isPQ(forced.CurveID):
-		r.ForcedPQSupported = true
-		r.ForcedPQGroup = forced.CurveID
+	case err == nil:
+		r.ForcedPQSupported = isPQ(forced.CurveID)
+		if r.ForcedPQSupported {
+			r.ForcedPQGroup = forced.CurveID
+		}
+	case !pqRejected(err):
+		// A real transport failure on the second handshake, not the ordinary
+		// "no common PQ group" rejection.
+		r.ForcedPQError = friendlyError(err, opts.Timeout)
 	}
 
 	return finish(r, start)

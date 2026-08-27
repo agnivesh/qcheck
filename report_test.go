@@ -71,11 +71,14 @@ func TestRenderJSONRoundTrip(t *testing.T) {
 }
 
 func TestRenderTextError(t *testing.T) {
-	r := finish(Result{Target: "nope.invalid", Err: "default handshake: lookup nope.invalid: no such host"}, time.Now())
+	r := finish(Result{Target: "nope.invalid", Err: "DNS lookup failed: no such host"}, time.Now())
 	var buf bytes.Buffer
 	RenderText(&buf, []Result{r}, false)
 	got := buf.String()
-	if !strings.Contains(got, "ERROR") || !strings.Contains(got, "no such host") {
+	if !strings.Contains(got, "ERROR") || !strings.Contains(got, "DNS lookup failed: no such host") {
 		t.Fatalf("error report missing expected content:\n%s", got)
+	}
+	if strings.Contains(got, "handshake") || strings.Contains(got, "  error ") {
+		t.Fatalf("error report leaks internal wording:\n%s", got)
 	}
 }
