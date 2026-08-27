@@ -13,6 +13,20 @@ var pqGroups = []tls.CurveID{
 	tls.SecP384r1MLKEM1024,
 }
 
+// allGroups is every key-exchange group qcheck probes for one at a time when
+// --groups is set, in the order they are reported. It covers the classical
+// curves plus the three hybrid PQ groups, so the report shows both what a server
+// accepts today and which PQ groups it is missing.
+var allGroups = []tls.CurveID{
+	tls.X25519,
+	tls.X25519MLKEM768,
+	tls.SecP256r1MLKEM768,
+	tls.SecP384r1MLKEM1024,
+	tls.CurveP256,
+	tls.CurveP384,
+	tls.CurveP521,
+}
+
 // isPQ reports whether id is a hybrid post-quantum key-exchange group.
 func isPQ(id tls.CurveID) bool {
 	switch id {

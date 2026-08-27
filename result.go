@@ -27,6 +27,17 @@ type Result struct {
 	ForcedPQSupported bool
 	ForcedPQError     string
 
+	// SupportedGroups lists the key-exchange groups the server accepted, one per
+	// group, when --groups enumeration ran. Empty otherwise.
+	SupportedGroups []tls.CurveID
+
+	// FinalTarget and Redirects record where --follow landed. FinalTarget is the
+	// "host:port" actually probed when it differs from the original; Redirects is
+	// the URL chain. FollowNote explains a best-effort follow that failed.
+	FinalTarget string
+	Redirects   []string
+	FollowNote  string
+
 	ALPN         string
 	LeafSigAlg   string
 	ChainSigAlgs []string

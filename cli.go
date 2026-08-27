@@ -26,6 +26,8 @@ type config struct {
 	concurrency int
 	inputFile   string
 	strict      bool
+	groups      bool
+	follow      bool
 }
 
 // run parses args, probes every target concurrently, renders a report to stdout,
@@ -40,6 +42,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.Usage = func() { usage(stderr, fs) }
 
 	var cfg config
+	var resolve resolveFlag
 	showVersion := fs.Bool("version", false, "print version and exit")
 	fs.BoolVar(&cfg.json, "json", false, "emit a JSON report instead of text")
 	fs.DurationVar(&cfg.timeout, "timeout", 10*time.Second, "per-handshake timeout")
@@ -47,6 +50,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&cfg.concurrency, "concurrency", 0, "max concurrent probes (default: min(targets, 8))")
 	fs.StringVar(&cfg.inputFile, "input", "", "read targets from a file, one per line (\"-\" for stdin)")
 	fs.BoolVar(&cfg.strict, "strict", false, "exit non-zero unless every target is READY")
+	fs.BoolVar(&cfg.groups, "groups", false, "list every key-exchange group the server accepts")
+	fs.BoolVar(&cfg.follow, "follow", false, "follow HTTP redirects and probe the final host")
+	fs.Var(&resolve, "resolve", "dial host:port at a given IP, keeping SNI: host:port:addr (repeatable)")
 
 	if err := fs.Parse(args); err != nil {
 		return 3
@@ -72,7 +78,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		conc = min(len(targets), 8)
 	}
 
-	opts := Options{Timeout: cfg.timeout, InsecureSkipVerify: cfg.insecure}
+	opts := Options{
+		Timeout:            cfg.timeout,
+		InsecureSkipVerify: cfg.insecure,
+		EnumerateGroups:    cfg.groups,
+		Follow:             cfg.follow,
+		DialOverride:       resolve.overrides,
+	}
 	results := probeAll(context.Background(), targets, opts, conc)
 
 	if cfg.json {

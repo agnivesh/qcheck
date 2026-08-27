@@ -33,6 +33,31 @@ func TestRunJSON(t *testing.T) {
 	}
 }
 
+func TestRunGroupsJSON(t *testing.T) {
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+
+	var out bytes.Buffer
+	code := run([]string{"--json", "--groups", "--insecure", srv.URL}, &out, io.Discard)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; output:\n%s", code, out.String())
+	}
+	var rep jsonReport
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Results[0].SupportedGroups) == 0 {
+		t.Fatalf("expected supported_groups to be populated:\n%s", out.String())
+	}
+}
+
+func TestRunBadResolveExits3(t *testing.T) {
+	code := run([]string{"--resolve", "nonsense", "example.com"}, io.Discard, io.Discard)
+	if code != 3 {
+		t.Fatalf("exit code = %d, want 3", code)
+	}
+}
+
 func TestRunText(t *testing.T) {
 	srv := httptest.NewTLSServer(nil)
 	defer srv.Close()
